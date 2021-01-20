@@ -1,3 +1,6 @@
+#ifndef TOPPRA_DEBUG_ON
+# define TOPPRA_DEBUG_ON
+#endif
 #include <toppra/solver/seidel.hpp>
 
 namespace toppra {
@@ -39,7 +42,7 @@ constexpr double VAR_MAX =  1e8;
 
 // absolute largest value that a variable can have. This bound should
 // be never be reached, however, in order for the code to work properly.
-constexpr double INF = 1e10;
+constexpr double INF = 1e12;
 
 template<class Coeffs, class Vars>
 typename Coeffs::Scalar value(const Eigen::MatrixBase<Coeffs>& coeffs,
@@ -67,10 +70,10 @@ LpSol solve_lp1d(const RowVector2& v, const Eigen::MatrixBase<Derived>& A)
       active_c_max = -2;
   auto a (A.col(0)), b (A.col(1));
 
-  TOPPRA_LOG_DEBUG("Seidel LP 1D:\n"
-      << "v: " << v << '\n'
-      << "A:\n" << A << '\n'
-      );
+  // TOPPRA_LOG_DEBUG("Seidel LP 1D:\n"
+  //     << "v: " << v << '\n'
+  //     << "A:\n" << A << '\n'
+  //     );
 
   for (int i = 0; i < a.size(); ++i) {
     if (a[i] > TINY) {
@@ -86,14 +89,25 @@ LpSol solve_lp1d(const RowVector2& v, const Eigen::MatrixBase<Derived>& A)
         active_c_min = i;
       }
     } else if (b[i] > SMALL) {
+      TOPPRA_LOG_DEBUG("Seidel LP 1D:\n"
+          << "v: " << v << '\n'
+          << "A:\n" << A << '\n'
+          );
       TOPPRA_LOG_DEBUG("Seidel LP 1D: constraint " << i << " infeasible.");
       return INFEASIBLE;
     }
     // else a[i] is approximately zero. do nothing.
   }
 
-  if (cur_min - cur_max > SMALL)
+  if (cur_min - cur_max > 1e-6) {
+    TOPPRA_LOG_DEBUG("Seidel LP 1D:\n"
+        << "v: " << v << '\n'
+        << "A:\n" << A << '\n'
+        );
+    TOPPRA_LOG_DEBUG("Seidel 1D: incoherent bounds. high - low = "
+        << cur_max << " - " << cur_min << " = " << cur_max - cur_min);
     return INFEASIBLE;
+  }
 
   if (abs(v[0]) < TINY || v[0] < 0) {
     // optimizing direction is perpencicular to the line, or is
@@ -176,12 +190,12 @@ LpSol solve_lp2d(const RowVector2& v,
   LpSol sol;
 
   // print all input to the algorithm
-  TOPPRA_LOG_DEBUG("Seidel LP 2D:\n"
-      << "v: " << v << '\n'
-      << "A:\n" << A << '\n'
-      << "lo: " << low .transpose() << '\n'
-      << "hi: " << high.transpose() << '\n'
-      );
+  // TOPPRA_LOG_DEBUG("Seidel LP 2D:\n"
+  //     << "v: " << v << '\n'
+  //     << "A:\n" << A << '\n'
+  //     << "lo: " << low .transpose() << '\n'
+  //     << "hi: " << high.transpose() << '\n'
+  //     );
 
   if (use_cache) {
     assert(index_map.size() == nrows);
@@ -195,8 +209,14 @@ LpSol solve_lp2d(const RowVector2& v,
   // adhered to: fixed bounds are assigned the numbers: -1, -2, -3,
   // -4 according to the following order: low[0], high[0], low[1],
   // high[1].
-  if ((low.array() > high.array()).any()) {
-    TOPPRA_LOG_DEBUG("Seidel: incoherent bounds.");
+  if (((low - high).array() > 1e-6).any()) {
+    TOPPRA_LOG_DEBUG("Seidel LP 2D:\n"
+        << "v: " << v << '\n'
+        << "A:\n" << A << '\n'
+        << "lo: " << low .transpose() << '\n'
+        << "hi: " << high.transpose() << '\n'
+        );
+    TOPPRA_LOG_DEBUG("Seidel 2D: incoherent bounds. high - low = " << (high - low).transpose());
     return INFEASIBLE;
   }
   for (int i = 0; i < 2; ++i) {
@@ -208,7 +228,7 @@ LpSol solve_lp2d(const RowVector2& v,
       sol.active_c[i] = (i == 0) ? -1 : -3;
     }
   }
-  TOPPRA_LOG_DEBUG("cur_optvar = " << cur_optvar.transpose());
+  // TOPPRA_LOG_DEBUG("cur_optvar = " << cur_optvar.transpose());
 
   // If active_c contains valid entries, swap the first two indices
   // in index_map to these values.
@@ -294,17 +314,25 @@ LpSol solve_lp2d(const RowVector2& v,
     }
 
     // solve the projected, 1 dimensional LP
-    TOPPRA_LOG_DEBUG("Seidel LP 2D activate constraint " << i);
+    // TOPPRA_LOG_DEBUG("Seidel LP 2D activate constraint " << i);
     LpSol sol_1d = solve_lp1d(v_1d, A_1d.topRows(4+k));
-    TOPPRA_LOG_DEBUG("Seidel LP 1D solution:\n" << sol_1d);
+    // TOPPRA_LOG_DEBUG("Seidel LP 1D solution:\n" << sol_1d);
 
     // 1d lp infeasible
-    if (!sol_1d.feasible) return INFEASIBLE;
+    if (!sol_1d.feasible) {
+      TOPPRA_LOG_DEBUG("Seidel LP 2D:\n"
+          << "v: " << v << '\n'
+          << "A:\n" << A << '\n'
+          << "lo: " << low .transpose() << '\n'
+          << "hi: " << high.transpose() << '\n'
+          );
+      return INFEASIBLE;
+    }
 
     // feasible, wrapping up
     // compute the current optimal solution
     cur_optvar = zero_prj + sol_1d.optvar[0] * d_tan;
-    TOPPRA_LOG_DEBUG("cur_optvar = " << cur_optvar.transpose());
+    // TOPPRA_LOG_DEBUG("cur_optvar = " << cur_optvar.transpose());
     // record the active constraint's index
     switch (sol_1d.active_c[0] - k) {
       case 0: sol.active_c[1] = -1; break;
@@ -314,25 +342,27 @@ LpSol solve_lp2d(const RowVector2& v,
       default:
               if (sol_1d.active_c[0] < k)
                 sol.active_c[1] = index_map[sol_1d.active_c[0]];
-              else
+              else {
                 // the algorithm should not reach this point. If it
                 // does, this means the active constraint at the
                 // optimal solution is the fixed bound used in the 1
                 // dimensional subproblem. This should not happen
                 // though.
+                TOPPRA_LOG_DEBUG("Seidel: should never reach this point.");
                 return INFEASIBLE;
+              }
     }
   }
 
   for (int i = 0; i < nrows; ++i) {
     value_type v = value(A.row(i), cur_optvar);
-    if (v > 0) {
+    if (v > TINY) {
       TOPPRA_LOG_DEBUG("Seidel 2D: contraint " << i << " violated (" << v << " should be <= 0).");
     }
   }
 
-  TOPPRA_LOG_DEBUG("Seidel solution: " << cur_optvar.transpose()
-      << "\n active constraints " << sol.active_c[0] << " " << sol.active_c[1]);
+  // TOPPRA_LOG_DEBUG("Seidel solution: " << cur_optvar.transpose()
+  //     << "\n active constraints " << sol.active_c[0] << " " << sol.active_c[1]);
 
   // Fill the solution struct
   sol.feasible = true;

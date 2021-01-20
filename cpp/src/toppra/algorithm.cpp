@@ -42,7 +42,7 @@ ReturnCode PathParametrizationAlgorithm::computeControllableSets(
   /// solver wrapper themselfves as numerical behaviors is proper to each
   /// individual solver.
   /// See https://github.com/hungpham2511/toppra/issues/156
-  x << 0, 100;
+  x << 0, 1e8;
   x_next << 0, 1;
   for (std::size_t i = m_N - 1; i != (std::size_t)-1; i--) {
     TOPPRA_LOG_DEBUG(i << ", " << m_N);
